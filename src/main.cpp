@@ -119,10 +119,15 @@ public:
         {
           output_format_ = fmt::bcf;
         }
-        else if (ot == "ubcf")
+        else if (ot == "sav")
         {
           output_format_ = fmt::sav;
           compression_level_ = 6;
+        }
+        else if (ot == "usav")
+        {
+          output_format_ = fmt::sav;
+          compression_level_ = 0;
         }
         else
         {
