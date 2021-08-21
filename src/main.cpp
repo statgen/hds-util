@@ -67,7 +67,7 @@ public:
     os << " -g, --generate       Comma-separated list of FORMAT fields to generate (GT, DS, GP, or SD)\n";
     os << " -h, --help           Print usage\n";
     os << " -o, --output         Output path (default: /dev/stdout)\n";
-    os << " -O, --output-format  Output format (default: vcf)\n";
+    os << " -O, --output-format  Output format (vcf, vcf.gz, bcf, ubcf, sav, usav; default: vcf)\n";
     os << std::flush;
   }
 
