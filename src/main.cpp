@@ -35,9 +35,10 @@ private:
 
   std::vector<option> long_options_;
   std::vector<std::string> generate_fields_;
-  std::string input_path_;
-  std::string output_path_;
-  savvy::file::format output_format_;
+  std::vector<std::string> exclude_fields_;
+  std::string input_path_ = "/dev/stdin";
+  std::string output_path_ = "/dev/stdout";
+  savvy::file::format output_format_ = savvy::file::format::vcf;
   int compression_level_ = 0;
   bool help_ = false;
 public:
@@ -48,12 +49,14 @@ public:
         {"help", no_argument, 0, 'h'},
         {"output", required_argument, 0, 'o'},
         {"output-format", required_argument, 0, 'O'},
+        {"exclude", required_argument, 0, 'x'},
         {0, 0, 0, 0}
       })
   {
   }
 
   const std::vector<std::string>& generate_fields() const { return generate_fields_; }
+  const std::vector<std::string>& exclude_fields() const { return exclude_fields_; }
   const std::string& input_path() const { return input_path_; }
   const std::string& output_path() const { return output_path_; }
   savvy::file::format output_format() const { return output_format_; }
@@ -62,12 +65,13 @@ public:
 
   void print_usage(std::ostream& os)
   {
-    os << "Usage: sav index [opts ...] <in.sav> \n";
+    os << "Usage: hds-util [opts ...] [in.sav] \n";
     os << "\n";
     os << " -g, --generate       Comma-separated list of FORMAT fields to generate (GT, DS, GP, or SD)\n";
     os << " -h, --help           Print usage\n";
     os << " -o, --output         Output path (default: /dev/stdout)\n";
     os << " -O, --output-format  Output format (vcf, vcf.gz, bcf, ubcf, sav, usav; default: vcf)\n";
+    os << " -x, --exclude        Comma-separated list of FORMAT fields to exclude\n";
     os << std::flush;
   }
 
@@ -75,7 +79,7 @@ public:
   {
     int long_index = 0;
     int opt = 0;
-    while ((opt = getopt_long(argc, argv, "g:ho:O:", long_options_.data(), &long_index)) != -1)
+    while ((opt = getopt_long(argc, argv, "g:ho:O:x:", long_options_.data(), &long_index)) != -1)
     {
       char copt = char(opt & 0xFF);
       switch (copt)
@@ -136,6 +140,9 @@ public:
         }
         break;
       }
+      case 'x':
+        exclude_fields_ = split_string_to_vector(optarg ? optarg : "", ',');
+        break;
       default:
         return false;
       }
@@ -147,20 +154,9 @@ public:
     {
       input_path_ = argv[optind];
     }
-    else if (remaining_arg_count < 1)
-    {
-      std::cerr << "Too few arguments\n";
-      return false;
-    }
-    else
+    else if (remaining_arg_count > 1)
     {
       std::cerr << "Too many arguments\n";
-      return false;
-    }
-
-    if (input_path_ == "/dev/stdin" || input_path_ == "/dev/fd/0")
-    {
-      std::cerr << "Input SAV file cannot be stdin\n";
       return false;
     }
 
@@ -356,6 +352,13 @@ int main(int argc, char** argv)
   while (input >> record && output)
   {
     generate_fields(record);
+
+    for (auto it = args.exclude_fields().begin(); it != args.exclude_fields().end(); ++it)
+    {
+      record.set_format(*it, {});
+      if (*it == "GT")
+        record.set_format("PH", {});
+    }
 
     if (args.output_format() == savvy::file::format::sav)
     {
