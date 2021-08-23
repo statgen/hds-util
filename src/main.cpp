@@ -176,7 +176,7 @@ public:
   bool operator()(savvy::variant& record)
   {
     if (!record.get_format("HDS", hds_vec_))
-      return false;
+      return std::cerr << "Error: HDS must be present to use --generate\n", false;
 
     std::size_t stride = hds_vec_.size() / n_samples_;
 
@@ -351,7 +351,8 @@ int main(int argc, char** argv)
 
   while (input >> record && output)
   {
-    generate_fields(record);
+    if (!generate_fields(record))
+      return std::cerr << "Error: FORMAT field generation failed\n", EXIT_FAILURE;
 
     for (auto it = args.exclude_fields().begin(); it != args.exclude_fields().end(); ++it)
     {
