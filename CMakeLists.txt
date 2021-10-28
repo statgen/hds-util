@@ -7,7 +7,7 @@ set(CMAKE_FIND_LIBRARY_SUFFIXES ".a;${CMAKE_FIND_LIBRARY_SUFFIXES}") # Prefer li
 
 find_package(savvy REQUIRED)
 
-add_executable(hds-util src/main.cpp)
+add_executable(hds-util src/main.cpp src/merge_writer.hpp)
 target_compile_definitions(hds-util PUBLIC -DVERSION="${PROJECT_VERSION}")
 target_link_libraries(hds-util savvy)
 
