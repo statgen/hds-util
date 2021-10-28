@@ -8,7 +8,6 @@ class merge_writer
 {
 private:
   savvy::writer out_file_;
-  savvy::file::format file_format_;
   std::unordered_set<std::string> fmt_field_set_;
   std::size_t n_samples_ = 0;
   float min_r2_ = -1.f;
@@ -30,7 +29,6 @@ public:
     out_file_(file_path, file_format, update_headers(fmt_fields, reader_headers, sample_ids.size()),
       std::accumulate(sample_ids.begin(), sample_ids.end(), str_vec(), [](str_vec& l, const str_vec& r) { l.insert(l.end(), r.begin(), r.end()); return l; }),
       out_compression),
-    file_format_(file_format),
     fmt_field_set_(fmt_fields.begin(), fmt_fields.end()),
     n_samples_(std::accumulate(sample_ids.begin(), sample_ids.end(), std::size_t(0), [](std::size_t& l, const str_vec& r) { return l + r.size(); })),
     min_r2_(min_r2)

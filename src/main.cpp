@@ -33,8 +33,8 @@ private:
   std::vector<std::string> format_fields_;
   std::vector<std::string> input_paths_;
   std::string output_path_ = "/dev/stdout";
-  savvy::file::format output_format_ = savvy::file::format::vcf;
-  int compression_level_ = 0;
+  savvy::file::format output_format_ = savvy::file::format::sav;
+  int compression_level_ = 6;
   float min_r2_ = -1.f;
   bool help_ = false;
   bool version_ = false;
@@ -111,25 +111,24 @@ public:
         if (ot == "vcf")
         {
           output_format_ = fmt::vcf;
+          compression_level_ = 0;
         }
         else if (ot == "vcf.gz")
         {
           output_format_ = fmt::vcf;
-          compression_level_ = 6;
         }
         else if (ot == "bcf")
         {
           output_format_ = fmt::bcf;
-          compression_level_ = 6;
         }
         else if (ot == "ubcf")
         {
           output_format_ = fmt::bcf;
+          compression_level_ = 0;
         }
         else if (ot == "sav")
         {
           output_format_ = fmt::sav;
-          compression_level_ = 6;
         }
         else if (ot == "usav")
         {
