@@ -1,4 +1,5 @@
 # hds-util
+This is a post-processing tool for [Minimac4](https://github.com/statgen/Minimac4) and [Michigan Imputation Server](https://imputationserver.readthedocs.io/en/latest/) (MIS). It can generate FORMAT fields from HDS, convert from the SAV file format to BCF or VCF, and paste together sample groups that were split due to MIS sample size limit.  
 
 ## Installation
 
@@ -11,7 +12,7 @@ make
 make install
 ```
 
-# Usage
+## Usage
 
 ```
 # Generate GT and DS format fields and convert to BCF file format.
@@ -23,6 +24,9 @@ hds-util in1.sav in2.sav in3.sav > merged.sav
 # Paste samples, genearte GT and DS while keeping HDS, and filter variants with R2<0.1.  
 hds-util -f GT,DS,HDS -m 0.1 in1.sav in2.sav in3.sav > merged.sav
 ```
+
+## Pasting Samples
+To impute datasets that exceed the MIS maximum sample size, array VCFs must be split into sample group files. The imputed sample groups can be paste together using hds-util. The site list for each sample group file must match, so the mininum r-square threshold must be disabled when submitting the imputation job. An r-square filter can be applied in hds-util with `--min-r2 <threshold>`.
 
 ## Field Generation Formulas
 
