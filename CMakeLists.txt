@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.2)
-project(hds-util)
+project(hds-util VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 11)
 
@@ -8,6 +8,7 @@ set(CMAKE_FIND_LIBRARY_SUFFIXES ".a;${CMAKE_FIND_LIBRARY_SUFFIXES}") # Prefer li
 find_package(savvy REQUIRED)
 
 add_executable(hds-util src/main.cpp)
+target_compile_definitions(hds-util PUBLIC -DVERSION="${PROJECT_VERSION}")
 target_link_libraries(hds-util savvy)
 
 install(TARGETS hds-util RUNTIME DESTINATION bin)

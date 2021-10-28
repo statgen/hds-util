@@ -4,8 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-#include <savvy/reader.hpp>
-#include <savvy/writer.hpp>
+#include "merge_writer.hpp"
 
 #include <getopt.h>
 #include <cstdlib>
@@ -30,48 +29,49 @@ std::vector<std::string> split_string_to_vector(const char* in, char delim)
 class prog_args
 {
 private:
-  static const int default_compression_level = 3;
-  static const int default_block_size = 2048;
-
   std::vector<option> long_options_;
-  std::vector<std::string> generate_fields_;
-  std::vector<std::string> exclude_fields_;
-  std::string input_path_ = "/dev/stdin";
+  std::vector<std::string> format_fields_;
+  std::vector<std::string> input_paths_;
   std::string output_path_ = "/dev/stdout";
   savvy::file::format output_format_ = savvy::file::format::vcf;
   int compression_level_ = 0;
+  float min_r2_ = -1.f;
   bool help_ = false;
+  bool version_ = false;
 public:
   prog_args() :
     long_options_(
       {
-        {"generate", required_argument, 0, 'g'},
+        {"format", required_argument, 0, 'f'},
         {"help", no_argument, 0, 'h'},
+        {"min-r2", required_argument, 0, 'm'},
         {"output", required_argument, 0, 'o'},
         {"output-format", required_argument, 0, 'O'},
-        {"exclude", required_argument, 0, 'x'},
+        {"version", no_argument, 0, 'v'},
         {0, 0, 0, 0}
       })
   {
   }
 
-  const std::vector<std::string>& generate_fields() const { return generate_fields_; }
-  const std::vector<std::string>& exclude_fields() const { return exclude_fields_; }
-  const std::string& input_path() const { return input_path_; }
+  const std::vector<std::string>& format_fields() const { return format_fields_; }
+  const std::vector<std::string>& input_paths() const { return input_paths_; }
   const std::string& output_path() const { return output_path_; }
   savvy::file::format output_format() const { return output_format_; }
   int compression_level() const { return compression_level_; }
+  float min_r2() const { return min_r2_; }
   bool help_is_set() const { return help_; }
+  bool version_is_set() const { return version_; }
 
   void print_usage(std::ostream& os)
   {
-    os << "Usage: hds-util [opts ...] [in.sav] \n";
+    os << "Usage: hds-util [opts ...] [input_files.sav ...] \n";
     os << "\n";
-    os << " -g, --generate       Comma-separated list of FORMAT fields to generate (GT, DS, GP, or SD)\n";
+    os << " -f, --format         Comma-separated list of FORMAT fields to export (GT, HDS, DS, GP, or SD)\n";
     os << " -h, --help           Print usage\n";
+    os << " -m, --min-r2         Minimum r-square threshold\n";
     os << " -o, --output         Output path (default: /dev/stdout)\n";
-    os << " -O, --output-format  Output format (vcf, vcf.gz, bcf, ubcf, sav, usav; default: vcf)\n";
-    os << " -x, --exclude        Comma-separated list of FORMAT fields to exclude\n";
+    os << " -O, --output-format  Output file format (vcf, vcf.gz, bcf, ubcf, sav, usav; default: vcf)\n";
+    os << " -v, --version        Print version\n";
     os << std::flush;
   }
 
@@ -79,25 +79,28 @@ public:
   {
     int long_index = 0;
     int opt = 0;
-    while ((opt = getopt_long(argc, argv, "g:ho:O:x:", long_options_.data(), &long_index)) != -1)
+    while ((opt = getopt_long(argc, argv, "f:hm:o:O:v", long_options_.data(), &long_index)) != -1)
     {
       char copt = char(opt & 0xFF);
       switch (copt)
       {
-      case 'g':
+      case 'f':
       {
-        std::set<std::string> allowed = {"GT", "DS", "GP", "SD"};
-        generate_fields_ = split_string_to_vector(optarg ? optarg : "", ',');
-        for (const auto& g : generate_fields_)
+        std::set<std::string> allowed = {"GT", "HDS", "DS", "GP", "SD"};
+        format_fields_ = split_string_to_vector(optarg ? optarg : "", ',');
+        for (const auto& f : format_fields_)
         {
-          if (allowed.find(g) == allowed.end())
-            return std::cerr << "Invalid --generate value (" << g << ")\n", false;
+          if (allowed.find(f) == allowed.end())
+            return std::cerr << "Invalid --format value (" << f << ")\n", false;
         }
         break;
       }
       case 'h':
         help_ = true;
         return true;
+      case 'm':
+        min_r2_ = std::atof(optarg ? optarg : "");
+        break;
       case 'o':
         output_path_ = optarg ? optarg : "";
         break;
@@ -140,9 +143,9 @@ public:
         }
         break;
       }
-      case 'x':
-        exclude_fields_ = split_string_to_vector(optarg ? optarg : "", ',');
-        break;
+      case 'v':
+        version_ = true;
+        return true;
       default:
         return false;
       }
@@ -150,162 +153,41 @@ public:
 
     int remaining_arg_count = argc - optind;
 
-    if (remaining_arg_count == 1)
+    if (remaining_arg_count == 0)
     {
-      input_path_ = argv[optind];
+      input_paths_.push_back("/dev/stdin");
     }
-    else if (remaining_arg_count > 1)
+    else
     {
-      std::cerr << "Too many arguments\n";
-      return false;
+      input_paths_.reserve(remaining_arg_count);
+      for (std::size_t i = 0; i < remaining_arg_count; ++i)
+        input_paths_.push_back(argv[optind + i]);
     }
 
     return true;
   }
 };
 
-class field_generator
+
+
+bool is_empirical_file(const savvy::reader& rdr)
 {
-public:
-  field_generator(const std::vector<std::string>& fields, std::size_t n_samples) :
-    fields_(fields),
-    n_samples_(n_samples)
+  for (auto it = rdr.format_headers().begin(); it != rdr.format_headers().end(); ++it)
   {
+    if (it->id == "LDS")
+      return true;
   }
+  return false;
+}
 
-  bool operator()(savvy::variant& record)
-  {
-    if (!record.get_format("HDS", hds_vec_))
-      return std::cerr << "Error: HDS must be present to use --generate\n", false;
-
-    std::size_t stride = hds_vec_.size() / n_samples_;
-
-    for (const auto& field : fields_)
-    {
-      if (field == "GT")
-      {
-        gt_vec_.clear();
-        gt_vec_.resize(hds_vec_.size());
-        for (std::size_t i = 0; i < hds_vec_.size(); ++i)
-        {
-          if (hds_vec_[i] == 0.f)
-            continue;
-          gt_vec_[i] = std::isnan(hds_vec_[i]) ? hds_vec_[i] : std::int8_t(std::round(hds_vec_[i]));
-        }
-
-        record.set_format("GT", gt_vec_);
-      }
-      else if (field == "DS")
-      {
-        ds_vec_.clear();
-        ds_vec_.resize(n_samples_);
-        for (std::size_t i = 0; i < n_samples_; ++i)
-        {
-          float ds = hds_vec_[i * stride];
-          for (std::size_t j = 1; j < stride; ++j)
-          {
-            float v = hds_vec_[i * stride + j];
-            if (savvy::typed_value::is_end_of_vector(v))
-              break;
-            ds += v;
-          }
-
-          if (std::isnan(ds) || ds)
-            ds_vec_[i] = ds;
-        }
-        record.set_format("DS", ds_vec_);
-      }
-      else if (field == "GP")
-      {
-        if (stride == 1)
-        {
-          // All samples are haploid
-          dense_float_vec_.resize(n_samples_ * 2);
-          for (std::size_t i = 0; i < n_samples_; ++i)
-          {
-            std::size_t dest_idx = i * 2;
-            dense_float_vec_[dest_idx] = 1.f - hds_vec_[i];
-            dense_float_vec_[dest_idx + 1] = hds_vec_[i];
-          }
-        }
-        else if (stride == 2)
-        {
-          dense_float_vec_.resize(n_samples_ * 3);
-          for (std::size_t i = 0; i < n_samples_; ++i)
-          {
-            std::size_t src_idx = i * 2;
-            std::size_t dest_idx = i * 3;
-            float x = hds_vec_[src_idx];
-            float y = hds_vec_[src_idx + 1];
-            if (savvy::typed_value::is_end_of_vector(y))
-            {
-              // haploid
-              dense_float_vec_[dest_idx] = 1.f - x;
-              dense_float_vec_[dest_idx + 1] = x;
-              dense_float_vec_[dest_idx + 2] = y;
-            }
-            else
-            {
-              // diploid
-              dense_float_vec_[dest_idx] = (1.f - x) * (1.f - y);
-              dense_float_vec_[dest_idx + 1] = x * (1.f - y) + y * (1.f - x);
-              dense_float_vec_[dest_idx + 2] =  x * y;
-            }
-          }
-        }
-        else
-        {
-          std::cerr << "Error: only haploid and diploid samples are supported when generating GP\n";
-          return false;
-        }
-        record.set_format("GP", dense_float_vec_);
-      }
-      else if (field == "SD")
-      {
-        dense_float_vec_.resize(n_samples_);
-        if (stride == 1)
-        {
-          // All samples are haploid
-          for (std::size_t i = 0; i < n_samples_; ++i)
-          {
-            dense_float_vec_[i] = hds_vec_[i] * (1.f - hds_vec_[i]);
-          }
-        }
-        else if (stride == 2)
-        {
-          for (std::size_t i = 0; i < hds_vec_.size(); i+=2)
-          {
-            float x = hds_vec_[i];
-            float y = hds_vec_[i + 1];
-            if (savvy::typed_value::is_end_of_vector(y)) // haploid
-              dense_float_vec_[i / 2] = x * (1.f - x);
-            else // diploid
-              dense_float_vec_[i / 2] = x * (1.f - x) + y * (1.f - y);
-          }
-        }
-        else
-        {
-          std::cerr << "Error: only haploid and diploid samples are supported when generating SD\n";
-          return false;
-        }
-        record.set_format("SD", dense_float_vec_);
-      }
-      else
-      {
-        std::cerr << "Error: " << field << " field not supported\n";
-        return false;
-      }
-    }
-    return true;
-  }
-private:
-  std::size_t n_samples_ = 0;
-  std::vector<std::string> fields_;
-  std::vector<float> hds_vec_;
-  std::vector<float> dense_float_vec_;
-  savvy::compressed_vector<std::int8_t> gt_vec_;
-  savvy::compressed_vector<float> ds_vec_;
-};
+std::vector<std::string> format_fields_in_headers(const savvy::reader& rdr)
+{
+  std::vector<std::string> ret(rdr.format_headers().size());
+  std::size_t i = 0;
+  for (auto it = rdr.format_headers().begin(); it != rdr.format_headers().end(); ++it)
+    ret[i++] = it->id;
+  return ret;
+}
 
 int main(int argc, char** argv)
 {
@@ -322,70 +204,43 @@ int main(int argc, char** argv)
     return EXIT_SUCCESS;
   }
 
-  std::unordered_map<std::string, std::string> header_map = {
-    {"GT", "<ID=GT,Number=1,Type=String,Description=\"Genotype\">"},
-    {"DS", "<ID=DS,Number=1,Type=Float,Description=\"Estimated Alternate Allele Dosage : [P(0/1)+2*P(1/1)]\">"},
-    {"GP", "<ID=GP,Number=G,Type=Float,Description=\"Estimated Posterior Probabilities for Genotypes 0/0, 0/1 and 1/1 \">"},
-    {"SD", "<ID=SD,Number=1,Type=Float,Description=\"Variance of Posterior Genotype Probabilities\">"}
-  };
-
-  savvy::reader input(args.input_path());
-
-  auto hdrs = input.headers();
-
-  std::set<std::string> existing_format_headers;
-  for (const auto& h : input.format_headers())
-    existing_format_headers.insert(h.id);
-
-  for (auto g : args.generate_fields())
+  if (args.version_is_set())
   {
-    if (existing_format_headers.find(g) == existing_format_headers.end())
-      hdrs.emplace_back("FORMAT", header_map[g]);
+    std::cout << "hds-util v" << VERSION << std::endl;
+    return EXIT_SUCCESS;
   }
 
-  savvy::writer output(args.output_path(), args.output_format(), hdrs, input.samples(), args.compression_level());
-
-  savvy::variant record;
-  field_generator generate_fields(args.generate_fields(), input.samples().size());
-  savvy::typed_value tv;
-
-  while (input >> record && output)
+  std::list<savvy::reader> input_files;
+  std::vector<std::vector<std::string>> sample_ids(args.input_paths().size());
+  std::vector<bool> empirical(args.input_paths().size());
+  for (std::size_t i = 0; i < args.input_paths().size(); ++i)
   {
-    if (!generate_fields(record))
-      return std::cerr << "Error: FORMAT field generation failed\n", EXIT_FAILURE;
-
-    for (auto it = args.exclude_fields().begin(); it != args.exclude_fields().end(); ++it)
-    {
-      record.set_format(*it, {});
-      if (*it == "GT")
-        record.set_format("PH", {});
-    }
-
-    if (args.output_format() == savvy::file::format::sav)
-    {
-      // ensure HDS is sparse
-      for (auto it = record.format_fields().begin(); it != record.format_fields().end(); ++it)
-      {
-        if (it->first == "HDS")
-        {
-          if (!it->second.is_sparse())
-          {
-            it->second.copy_as_sparse(tv);
-            record.set_format("HDS", tv);
-          }
-          break;
-        }
-      }
-    }
-
-    output << record;
+    input_files.emplace_back(args.input_paths()[i]);
+    sample_ids[i] = input_files.back().samples();
+    empirical[i] = is_empirical_file(input_files.back());
   }
 
-  if (!output)
-    return std::cerr << "Error: write failure\n", EXIT_FAILURE;
+  auto format_fields = args.format_fields();
 
-  if (input.bad())
-    return std::cerr << "Error: read failure\n", EXIT_FAILURE;
+  std::size_t emp_cnt = std::count(empirical.begin(), empirical.end(), true);
+  if (emp_cnt && emp_cnt != empirical.size())
+    return std::cerr << "Error: cannot combine empirical files with non-empirical files\n", EXIT_FAILURE;
 
-  return EXIT_SUCCESS;
+  assert(input_files.size());
+  if (emp_cnt)
+    format_fields = {"GT", "LDS"};
+  else if (format_fields.empty())
+    format_fields = format_fields_in_headers(input_files.front());
+
+  if (!format_fields.empty() && emp_cnt)
+    return std::cerr << "Error: --format option not valid with empirical files\n", EXIT_FAILURE;
+
+  merge_writer output(args.output_path(),
+    args.output_format(), args.compression_level(),
+    input_files.front().headers(),
+    sample_ids,
+    format_fields,
+    args.min_r2());
+
+  return output.merge_files(input_files) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

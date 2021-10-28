@@ -3,6 +3,7 @@
 ## Installation
 
 ```bash
+# cget can be installed with `pip3 install --user cget`
 cget install -f ./requirements.txt
 mkdir build; cd build
 cmake -DCMAKE_TOOLCHAIN_FILE=../cget/cget/cget.cmake -DCMAKE_BUILD_TYPE=Release ..
@@ -10,9 +11,18 @@ make
 make install
 ```
 
-## R-squared Formulas
+# Usage
 
-TODO
+```
+# Generate GT and DS format fields and convert to BCF file format.
+hds-util in.sav -f GT,GP -O bcf -o out.bcf
+
+# Paste samples together and recompute estimatad r-square across all samples.
+hds-util in1.sav in2.sav in3.sav > merged.sav
+
+# Paste samples, genearte GT and DS while keeping HDS, and filter variants with R2<0.1.  
+hds-util -f GT,DS,HDS -m 0.1 in1.sav in2.sav in3.sav > merged.sav
+```
 
 ## Field Generation Formulas
 
