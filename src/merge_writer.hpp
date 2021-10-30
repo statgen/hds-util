@@ -130,12 +130,24 @@ public:
 
       std::size_t max_ploidy = 0;
       std::vector<std::size_t> ploidies(temp_files.size());
+      std::uint32_t prev_pos;
+      std::vector<std::string> prev_alts;
       good_count = 0;
       std::size_t i = 0;
       for (auto it = temp_files.begin(); it != temp_files.end(); ++it,++i)
       {
         if (it->read(out_var))
         {
+          if (i == 0)
+          {
+            prev_pos = out_var.pos();
+            prev_alts = out_var.alts();
+          }
+          else if (prev_pos != out_var.pos() || prev_alts != out_var.alts())
+          {
+            return std::cerr << "Error: site lists do not match\n", false;
+          }
+
           ++good_count;
 
           float er2;
@@ -161,64 +173,64 @@ public:
         }
       }
 
-      pasted_hds.resize(max_ploidy * n_samples_);
-      if (is_empirical)
-        pasted_gt.resize(max_ploidy * n_samples_);
-      std::size_t off = 0;
-      for (std::size_t i = 0; i < partial_hds_vecs.size(); ++i)
-      {
-        if (ploidies[i] < max_ploidy)
-        {
-          partial_hds_dense.clear();
-          partial_hds_dense.resize(partial_hds_vecs[i].size() / ploidies[i] * max_ploidy);
-          for (std::size_t j = 0; j < partial_hds_vecs[i].size() / ploidies[i]; ++j)
-          {
-            for (std::size_t k = ploidies[i]; k < max_ploidy; ++k)
-              partial_hds_dense[j * max_ploidy + k] = savvy::typed_value::end_of_vector_value<float>();
-          }
-
-          for (auto jt = partial_hds_vecs[i].begin(); jt != partial_hds_vecs[i].end(); ++jt)
-            partial_hds_dense[jt.offset() / ploidies[i] * max_ploidy + jt.offset() % ploidies[i]] = *jt;
-
-          for (std::size_t j = 0; j < partial_hds_dense.size(); ++j)
-          {
-            if (partial_hds_dense[j] == 0.f) continue;
-            pasted_hds[off + j] = partial_hds_dense[j];
-          }
-
-          if (is_empirical)
-          {
-            for (std::size_t j = 0; j < partial_gt_vecs[i].size() / ploidies[i]; ++j)
-            {
-              for (std::size_t k = ploidies[i]; k < max_ploidy; ++k)
-                pasted_gt[off + j * max_ploidy + k] = savvy::typed_value::end_of_vector_value<std::int8_t>();
-            }
-
-            for (auto jt = partial_gt_vecs[i].begin(); jt != partial_gt_vecs[i].end(); ++jt)
-              pasted_gt[off + jt.offset() / ploidies[i] * max_ploidy + jt.offset() % ploidies[i]] = *jt;
-          }
-
-          off += partial_hds_dense.size();
-        }
-        else
-        {
-          for (auto jt = partial_hds_vecs[i].begin(); jt != partial_hds_vecs[i].end(); ++jt)
-            pasted_hds[off + jt.offset()] = *jt;
-
-          if (is_empirical)
-          {
-            for (auto jt = partial_gt_vecs[i].begin(); jt != partial_gt_vecs[i].end(); ++jt)
-              pasted_gt[off + jt.offset()] = *jt;
-          }
-
-          off += partial_hds_vecs[i].size();
-        }
-      }
-
       if (good_count)
       {
         if (good_count < temp_files.size())
           return std::cerr << "Error: record mismatch in temp files\n", false;
+
+        pasted_hds.resize(max_ploidy * n_samples_);
+        if (is_empirical)
+          pasted_gt.resize(max_ploidy * n_samples_);
+        std::size_t off = 0;
+        for (std::size_t i = 0; i < partial_hds_vecs.size(); ++i)
+        {
+          if (ploidies[i] < max_ploidy)
+          {
+            partial_hds_dense.clear();
+            partial_hds_dense.resize(partial_hds_vecs[i].size() / ploidies[i] * max_ploidy);
+            for (std::size_t j = 0; j < partial_hds_vecs[i].size() / ploidies[i]; ++j)
+            {
+              for (std::size_t k = ploidies[i]; k < max_ploidy; ++k)
+                partial_hds_dense[j * max_ploidy + k] = savvy::typed_value::end_of_vector_value<float>();
+            }
+
+            for (auto jt = partial_hds_vecs[i].begin(); jt != partial_hds_vecs[i].end(); ++jt)
+              partial_hds_dense[jt.offset() / ploidies[i] * max_ploidy + jt.offset() % ploidies[i]] = *jt;
+
+            for (std::size_t j = 0; j < partial_hds_dense.size(); ++j)
+            {
+              if (partial_hds_dense[j] == 0.f) continue;
+              pasted_hds[off + j] = partial_hds_dense[j];
+            }
+
+            if (is_empirical)
+            {
+              for (std::size_t j = 0; j < partial_gt_vecs[i].size() / ploidies[i]; ++j)
+              {
+                for (std::size_t k = ploidies[i]; k < max_ploidy; ++k)
+                  pasted_gt[off + j * max_ploidy + k] = savvy::typed_value::end_of_vector_value<std::int8_t>();
+              }
+
+              for (auto jt = partial_gt_vecs[i].begin(); jt != partial_gt_vecs[i].end(); ++jt)
+                pasted_gt[off + jt.offset() / ploidies[i] * max_ploidy + jt.offset() % ploidies[i]] = *jt;
+            }
+
+            off += partial_hds_dense.size();
+          }
+          else
+          {
+            for (auto jt = partial_hds_vecs[i].begin(); jt != partial_hds_vecs[i].end(); ++jt)
+              pasted_hds[off + jt.offset()] = *jt;
+
+            if (is_empirical)
+            {
+              for (auto jt = partial_gt_vecs[i].begin(); jt != partial_gt_vecs[i].end(); ++jt)
+                pasted_gt[off + jt.offset()] = *jt;
+            }
+
+            off += partial_hds_vecs[i].size();
+          }
+        }
 
         if (!is_empirical)
           set_info_fields(out_var, pasted_hds);
