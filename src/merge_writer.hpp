@@ -349,21 +349,25 @@ private:
 
     if (fmt_field_set_.find("GT") != fmt_field_set_.end())
     {
-      if (sparse_gt_.size())
+      if (out_var.format_fields().size() && out_var.format_fields().front().first != "GT")
       {
-        out_var.set_format("GT", sparse_gt_);
+        // Ensure GT is first FORMAT field.
+        std::vector<std::string> fmt_keys;
+        fmt_keys.reserve(out_var.format_fields().size());
+        for (auto it = out_var.format_fields().begin(); it != out_var.format_fields().end(); ++it)
+          fmt_keys.push_back(it->first);
+
+        for (auto it = fmt_keys.begin(); it != fmt_keys.end(); ++it)
+          out_var.set_format(*it, {});
       }
-      else
+
+      sparse_gt_.assign(sparse_dosages.value_data(), sparse_dosages.value_data() + sparse_dosages.non_zero_size(), sparse_dosages.index_data(), sparse_dosages.size(), [](float v)
       {
-        out_var.set_format("HDS", {});
-        sparse_gt_.assign(sparse_dosages.value_data(), sparse_dosages.value_data() + sparse_dosages.non_zero_size(), sparse_dosages.index_data(), sparse_dosages.size(), [](float v)
-        {
-          if (savvy::typed_value::is_end_of_vector(v))
-            return savvy::typed_value::end_of_vector_value<std::int8_t>();
-          return std::int8_t(v < 0.5f ? 0 : 1);
-        });
-        out_var.set_format("GT", sparse_gt_);
-      }
+        if (savvy::typed_value::is_end_of_vector(v))
+          return savvy::typed_value::end_of_vector_value<std::int8_t>();
+        return std::int8_t(v < 0.5f ? 0 : 1);
+      });
+      out_var.set_format("GT", sparse_gt_);
     }
 
     if (fmt_field_set_.find("HDS") != fmt_field_set_.end())
@@ -471,6 +475,11 @@ private:
       // unset dense dosage vector
       for (auto it = sparse_dosages.begin(); it != sparse_dosages.end(); ++it)
         dense_zero_vec_[it.offset()] = 0.f;
+    }
+    else
+    {
+      out_var.set_format("GP", {});
+      out_var.set_format("SD", {});
     }
 
 
