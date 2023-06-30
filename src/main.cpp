@@ -217,6 +217,7 @@ int main(int argc, char** argv)
     input_files.emplace_back(args.input_paths()[i]);
     sample_ids[i] = input_files.back().samples();
     empirical[i] = is_empirical_file(input_files.back());
+    input_files.back().phasing_status(savvy::phasing::phased);
   }
 
   auto format_fields = args.format_fields();

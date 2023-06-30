@@ -70,6 +70,10 @@ public:
       {
         // FORMAT headers are added later
       }
+      else if (it->first == "phasing")
+      {
+        // overwrite phasing header later
+      }
       else if (it->first == "INFO")
       {
         if (known_info_fields.find(savvy::parse_header_sub_field(it->second, "ID")) == known_info_fields.end())
@@ -98,6 +102,8 @@ public:
       else if (f == "LDS")
         ret.emplace_back("FORMAT", "<ID=LDS,Number=.,Type=Float,Description=\"Leave-one-out Imputed Dosage : Estimated Haploid Alternate Allele Dosage assuming site was NOT genotyped\">");
     }
+
+    ret.emplace_back("phasing", "full");
 
     // TODO: command string
 
@@ -259,6 +265,18 @@ public:
           {
             set_format_fields(out_var, pasted_hds);
           }
+
+          // Remove unexpected (unmerged) FORMAT fields
+          std::vector<std::string> fmt_fields_to_remove;
+          for (auto fmt = out_var.format_fields().begin(); fmt != out_var.format_fields().end(); ++fmt)
+          {
+            if (fmt_field_set_.find(fmt->first) == fmt_field_set_.end())
+              fmt_fields_to_remove.push_back(fmt->first);
+          }
+
+          for (auto fmt = fmt_fields_to_remove.begin(); fmt != fmt_fields_to_remove.end(); ++fmt)
+            out_var.set_format(*fmt, {});
+
           out_file_ << out_var;
         }
       }
