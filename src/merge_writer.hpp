@@ -128,7 +128,7 @@ public:
     bool is_empirical = fmt_field_set_.find("LDS") != fmt_field_set_.end();
 
     int good_count = temp_files.size();
-    while (good_count == temp_files.size())
+    while (good_count == temp_files.size() && out_file_)
     {
       pasted_hds.clear();
       pasted_gt.clear();
